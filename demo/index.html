@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oven Card – Demo</title>
+<style>
+  /* Rough stand-ins for the Home Assistant theme variables. */
+  body { --primary-text-color: #212121; --secondary-text-color: #727272; --divider-color: #e0e0e0;
+    --secondary-background-color: #f2f3f5; --card-background-color: #fff; --ha-card-background: #fff;
+    --error-color: #db4437; --warning-color: #ffa600; --state-icon-color: #546e7a;
+    margin: 0; font: 14px/1.4 Roboto, system-ui, sans-serif; background: #f0f1f4; color: var(--primary-text-color); }
+  body.dark { --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b; --divider-color: #2f3337;
+    --secondary-background-color: #282b2f; --card-background-color: #1c1c1c; --ha-card-background: #1c1c1c; background: #111; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+    padding: 10px 20px; background: var(--card-background-color); border-bottom: 1px solid var(--divider-color); }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  header label { display: flex; gap: 8px; align-items: center; color: var(--secondary-text-color); }
+  button { border: 1px solid var(--divider-color); background: var(--secondary-background-color); color: var(--primary-text-color);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; font: inherit; }
+  button.on { border-color: #ff6d1f; color: #ff6d1f; }
+  main { padding: 20px; display: grid; gap: 18px; max-width: 1240px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; align-items: start; }
+  .small { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); margin: 0 0 6px 2px; font-weight: 500; }
+  code { font-size: 12px; color: var(--secondary-text-color); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔥 Oven Card – Demo</h1>
+  <label>Abbrand-Minute <input id="minute" type="range" min="0" max="215" value="62"> <span id="ml"></span></label>
+  <button id="door">Tür offen</button>
+  <button id="error">Heizfehler</button>
+  <button id="theme">Dunkel</button>
+  <button id="lang">English</button>
+  <button id="play">▶ Abspielen</button>
+</header>
+<main>
+  <div class="grid">
+    <div><h2>oven-window-card</h2><oven-window-card id="a"></oven-window-card></div>
+    <div><h2>oven-curve-card</h2><oven-curve-card id="b"></oven-curve-card></div>
+    <div><h2>oven-status-card</h2><oven-status-card id="c"></oven-status-card></div>
+  </div>
+  <div class="small">
+    <div style="width: 170px; height: 196px"><h2>window · compact</h2><div style="height: 170px"><oven-window-card id="am"></oven-window-card></div></div>
+    <div style="width: 300px"><h2>curve · compact</h2><div style="height: 96px"><oven-curve-card id="bm"></oven-curve-card></div></div>
+    <div style="width: 300px"><h2>status · compact</h2><oven-status-card id="cm"></oven-status-card></div>
+  </div>
+  <div><h2>oven-badge</h2><div class="small" style="gap: 8px" id="badges"></div></div>
+</main>
+
+<script>
+  // Minimal ha-card stand-in.
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML = `<style>:host { display: block; background: var(--ha-card-background);
+        border-radius: 12px; border: 1px solid var(--divider-color); box-sizing: border-box; }</style><slot></slot>`;
+    }
+  });
+</script>
+<script type="module">
+  import "../dist/oven-card.js";
+
+  const DEV = "dev1";
+  const P = "sensor.wohnzimmer_ofen_";
+  const ENT = {
+    [`${P}flammentemperatur`]: "flame_temperature", [`${P}zuluftklappe`]: "flap", [`${P}brennphase`]: "phase",
+    [`${P}brenndauer`]: "burn_duration", [`${P}letzter_alarm`]: "latest_alarm",
+    "binary_sensor.wohnzimmer_ofen_tur": "door", "binary_sensor.wohnzimmer_ofen_relais_dg": "relay",
+    "binary_sensor.wohnzimmer_ofen_heizfehler": "heating_error", "binary_sensor.wohnzimmer_ofen_flammenfuhlerfehler": "flame_sensor_error",
+    "number.wohnzimmer_ofen_ts_starttemperatur": "start_temp", "number.wohnzimmer_ofen_s2": "flap2",
+    "number.wohnzimmer_ofen_s3": "flap3", "number.wohnzimmer_ofen_s4": "flap4", "number.wohnzimmer_ofen_s5": "flap5",
+    "number.wohnzimmer_ofen_ds3": "temp3", "number.wohnzimmer_ofen_ds4": "temp4", "number.wohnzimmer_ofen_ds5": "temp5",
+    "number.wohnzimmer_ofen_szv": "close_timeout",
+  };
+  const entities = Object.fromEntries(Object.entries(ENT).map(([entity_id, translation_key]) =>
+    [entity_id, { entity_id, translation_key, platform: "oven_control", device_id: DEV }]));
+  const byKey = Object.fromEntries(Object.entries(ENT).map(([id, k]) => [`${id.split(".")[0]}.${k}`, id]));
+
+  // Simulated burn with the curve of the live unit.
+  const STAGES = [[1, 0, 100], [2, 9, 50], [3, 84, 40], [4, 118, 30], [5, 152, 15], [8, 196, 100]];
+  const tempAt = (m) => m <= 0 ? 21 : Math.round(Math.max(45, (21 + 700 * (1 - Math.exp(-m / 26))) * (m > 55 ? Math.exp(-(((m - 55) / 70) ** 1.6)) : 1)) + 8 * Math.sin(m / 3));
+  const stageAt = (m) => STAGES.filter((s) => m >= s[1]).at(-1);
+  const st = { minute: 62, door: false, error: false, dark: false, lang: "de" };
+
+  function makeHass() {
+    const m = st.minute, s = stageAt(m);
+    const v = {
+      "sensor.flame_temperature": tempAt(m), "sensor.flap": m ? s[2] : 0, "sensor.phase": m ? s[0] : 0,
+      "sensor.burn_duration": Math.min(m, 196), "sensor.latest_alarm": "2025-11-23",
+      "binary_sensor.door": st.door ? "on" : "off", "binary_sensor.relay": m > 0 && m < 30 ? "on" : "off",
+      "binary_sensor.heating_error": st.error ? "on" : "off", "binary_sensor.flame_sensor_error": "off",
+      "number.start_temp": 205, "number.flap2": 50, "number.flap3": 40, "number.flap4": 30, "number.flap5": 15,
+      "number.temp3": 90, "number.temp4": 75, "number.temp5": 59, "number.close_timeout": 5,
+    };
+    const states = {};
+    for (const [k, val] of Object.entries(v)) states[byKey[k]] = { entity_id: byKey[k], state: String(val), attributes: {} };
+    const now = Date.now();
+    return {
+      states, entities, locale: { language: st.lang }, language: st.lang,
+      async callWS(msg) {
+        // History of the simulated burn: minute i happened (m - i) minutes ago.
+        const out = {};
+        for (const id of msg.entity_ids) {
+          const key = ENT[id];
+          const pts = [];
+          for (let i = Math.max(0, m - 240); i <= m; i++) {
+            const t = (now - (m - i) * 60000) / 1000;
+            const sv = key === "flame_temperature" ? tempAt(i) : key === "flap" ? (i ? stageAt(i)[2] : 0) : (i ? stageAt(i)[0] : 0);
+            pts.push({ s: String(sv), lu: t });
+          }
+          out[id] = pts;
+        }
+        return out;
+      },
+    };
+  }
+
+  const cards = {
+    a: {}, b: {}, c: {}, am: { compact: true }, bm: { compact: true }, cm: { compact: true },
+  };
+  for (const [id, cfg] of Object.entries(cards)) document.getElementById(id).setConfig({ device: DEV, ...cfg });
+  const badgeBox = document.getElementById("badges");
+  for (const show of ["temperature", "phase", "flap", "door", "alarm"]) {
+    const b = document.createElement("oven-badge");
+    b.setConfig({ device: DEV, show });
+    badgeBox.append(b);
+  }
+
+  function render() {
+    document.getElementById("minute").value = st.minute;
+    document.getElementById("ml").textContent = `${st.minute} min`;
+    const hass = makeHass();
+    for (const id of Object.keys(cards)) {
+      const el = document.getElementById(id);
+      el._historyFetched = 0; // the demo jumps in time, so always refetch
+      el.hass = hass;
+    }
+    badgeBox.querySelectorAll("oven-badge").forEach((b) => (b.hass = hass));
+  }
+
+  const q = new URLSearchParams(location.search);
+  if (q.has("minute")) st.minute = +q.get("minute");
+  if (q.has("door")) st.door = true;
+  if (q.has("error")) st.error = true;
+  if (q.has("en")) st.lang = "en";
+  if (q.has("dark")) { st.dark = true; document.body.classList.add("dark"); }
+
+  document.getElementById("minute").addEventListener("input", (e) => { st.minute = +e.target.value; render(); });
+  const toggle = (id, key, onText, offText) => document.getElementById(id).addEventListener("click", (e) => {
+    st[key] = !st[key]; e.target.classList.toggle("on", st[key]);
+    if (key === "dark") document.body.classList.toggle("dark", st.dark);
+    if (onText) e.target.textContent = st[key] ? onText : offText;
+    render();
+  });
+  toggle("door", "door"); toggle("error", "error"); toggle("theme", "dark", "Hell", "Dunkel");
+  document.getElementById("lang").addEventListener("click", (e) => {
+    st.lang = st.lang === "de" ? "en" : "de"; e.target.textContent = st.lang === "de" ? "English" : "Deutsch"; render();
+  });
+  let timer = null;
+  document.getElementById("play").addEventListener("click", (e) => {
+    if (timer) { clearInterval(timer); timer = null; e.target.textContent = "▶ Abspielen"; return; }
+    e.target.textContent = "⏸ Pause";
+    timer = setInterval(() => { st.minute = (st.minute + 1) % 216; render(); }, 80);
+  });
+  render();
+</script>
+</body>
+</html>
