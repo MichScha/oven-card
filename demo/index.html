@@ -29,7 +29,7 @@
 <body>
 <header>
   <h1>🔥 Oven Card – Demo</h1>
-  <label>Abbrand-Minute <input id="minute" type="range" min="0" max="215" value="62"> <span id="ml"></span></label>
+  <label>Abbrand-Minute <input id="minute" type="range" min="0" max="113" value="25"> <span id="ml"></span></label>
   <button id="door">Tür offen</button>
   <button id="error">Heizfehler</button>
   <button id="theme">Dunkel</button>
@@ -79,18 +79,26 @@
     [entity_id, { entity_id, translation_key, platform: "oven_control", device_id: DEV }]));
   const byKey = Object.fromEntries(Object.entries(ENT).map(([id, k]) => [`${id.split(".")[0]}.${k}`, id]));
 
-  // Simulated burn with the curve of the live unit.
-  const STAGES = [[1, 0, 100], [2, 9, 50], [3, 84, 40], [4, 118, 30], [5, 152, 15], [8, 196, 100]];
-  const tempAt = (m) => m <= 0 ? 21 : Math.round(Math.max(45, (21 + 700 * (1 - Math.exp(-m / 26))) * (m > 55 ? Math.exp(-(((m - 55) / 70) ** 1.6)) : 1)) + 8 * Math.sin(m / 3));
+  // Replay of a real burn (2026-10-18): flame temperature per minute after closing the door,
+  // and [phase, start minute, flap %] as reported by the controller.
+  const TEMPS = [29, 30, 31, 32, 47, 79, 120, 160, 186, 203, 218, 225, 232, 239, 246, 251, 256, 261, 264, 264,
+    270, 270, 267, 266, 264, 261, 258, 253, 248, 244, 240, 237, 233, 227, 225, 222, 218, 215, 211, 207, 203, 199,
+    196, 192, 190, 187, 185, 182, 179, 176, 173, 170, 167, 165, 163, 161, 159, 158, 152, 151, 151, 150, 149, 148,
+    148, 149, 149, 148, 148, 147, 147, 145, 144, 143, 143, 142, 141, 140, 139, 138, 138, 137, 136, 135, 134, 133,
+    133, 132, 132, 131, 130, 130, 129, 129, 128, 128, 127, 126, 126, 125, 125, 125, 124, 124, 123, 122, 122, 121,
+    121, 120, 120, 120, 119, 119];
+  const STAGES = [[1, 0, 100], [2, 6, 100], [3, 9, 50], [4, 32, 40], [5, 42, 30], [6, 57, 15], [8, 62, 0]];
+  const PHASE_STATE = { 0: "idle", 1: "start", 2: "heating_up", 3: "stage_2", 4: "stage_3", 5: "stage_4", 6: "stage_5", 8: "finished" };
+  const tempAt = (m) => TEMPS[Math.min(Math.max(m, 0), TEMPS.length - 1)];
   const stageAt = (m) => STAGES.filter((s) => m >= s[1]).at(-1);
-  const st = { minute: 62, door: false, error: false, dark: false, lang: "de" };
+  const st = { minute: 25, door: false, error: false, dark: false, lang: "de" };
 
   function makeHass() {
     const m = st.minute, s = stageAt(m);
     const v = {
-      "sensor.flame_temperature": tempAt(m), "sensor.flap": m ? s[2] : 0, "sensor.phase": m ? s[0] : 0,
-      "sensor.burn_duration": Math.min(m, 196), "sensor.latest_alarm": "2025-11-23",
-      "binary_sensor.door": st.door ? "on" : "off", "binary_sensor.relay": m > 0 && m < 30 ? "on" : "off",
+      "sensor.flame_temperature": tempAt(m), "sensor.flap": s[2], "sensor.phase": PHASE_STATE[s[0]],
+      "sensor.burn_duration": Math.min(m, 62), "sensor.latest_alarm": "2025-11-23",
+      "binary_sensor.door": st.door ? "on" : "off", "binary_sensor.relay": "off",
       "binary_sensor.heating_error": st.error ? "on" : "off", "binary_sensor.flame_sensor_error": "off",
       "number.start_temp": 205, "number.flap2": 50, "number.flap3": 40, "number.flap4": 30, "number.flap5": 15,
       "number.temp3": 90, "number.temp4": 75, "number.temp5": 59, "number.close_timeout": 5,
@@ -106,9 +114,9 @@
         for (const id of msg.entity_ids) {
           const key = ENT[id];
           const pts = [];
-          for (let i = Math.max(0, m - 240); i <= m; i++) {
+          for (let i = 0; i <= m; i++) {
             const t = (now - (m - i) * 60000) / 1000;
-            const sv = key === "flame_temperature" ? tempAt(i) : key === "flap" ? (i ? stageAt(i)[2] : 0) : (i ? stageAt(i)[0] : 0);
+            const sv = key === "flame_temperature" ? tempAt(i) : key === "flap" ? stageAt(i)[2] : PHASE_STATE[stageAt(i)[0]];
             pts.push({ s: String(sv), lu: t });
           }
           out[id] = pts;
@@ -163,7 +171,7 @@
   document.getElementById("play").addEventListener("click", (e) => {
     if (timer) { clearInterval(timer); timer = null; e.target.textContent = "▶ Abspielen"; return; }
     e.target.textContent = "⏸ Pause";
-    timer = setInterval(() => { st.minute = (st.minute + 1) % 216; render(); }, 80);
+    timer = setInterval(() => { st.minute = (st.minute + 1) % TEMPS.length; render(); }, 80);
   });
   render();
 </script>

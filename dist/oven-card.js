@@ -15,11 +15,13 @@
 
 const VERSION = "0.1.0";
 const DOMAIN = "oven_control";
-const PHASE_ORDER = [1, 2, 3, 4, 5, 8];
+const PHASE_ORDER = [1, 2, 3, 4, 5, 6, 8];
+// States of the burn phase sensor -> raw controller phase (stages S2–S5 are phases 3–6).
+const PHASE_RAW = { idle: 0, start: 1, heating_up: 2, stage_2: 3, stage_3: 4, stage_4: 5, stage_5: 6, finished: 8 };
 
 const STRINGS = {
   en: {
-    oven: "Stove", off: "Off", start: "Kindling", stage: "Stage", end: "End", phase: "Phase",
+    oven: "Stove", off: "Off", start: "Kindling", heating: "Heating up", heat: "Heat", stage: "Stage", end: "End", phase: "Phase",
     flame: "Flame temperature", flap: "Air flap", duration: "Burn duration", door: "Door",
     open: "open", closed: "closed", relay: "Relay", on: "on", relay_off: "off",
     heating_error: "Heating error – start temperature TS not reached",
@@ -32,7 +34,7 @@ const STRINGS = {
     show_curve: "Show burn curve", badge_show: "Shows", hide_inactive: "Hide when inactive",
   },
   de: {
-    oven: "Kaminofen", off: "Aus", start: "Anheizen", stage: "Stufe", end: "Ende", phase: "Phase",
+    oven: "Kaminofen", off: "Aus", start: "Anzünden", heating: "Aufheizen", heat: "Heizen", stage: "Stufe", end: "Ende", phase: "Phase",
     flame: "Flammentemperatur", flap: "Klappe", duration: "Brenndauer", door: "Tür",
     open: "offen", closed: "zu", relay: "Relais", on: "an", relay_off: "aus",
     heating_error: "Heizfehler – Starttemperatur TS wurde nicht erreicht",
@@ -92,10 +94,19 @@ function num(hass, id) {
 }
 const isOn = (hass, id) => hass.states[id]?.state === "on";
 
+/** Raw phase number from a state (text sensor since integration 0.3.0, number before). */
+function phaseNum(state, attrs) {
+  if (Number.isFinite(attrs?.raw_phase)) return attrs.raw_phase;
+  if (state in PHASE_RAW) return PHASE_RAW[state];
+  const v = parseInt(state, 10);
+  return Number.isFinite(v) ? v : null;
+}
+
 /** Read everything the cards need from the states of one device. */
 function readOven(hass, map) {
   const id = (k) => map[k];
-  const phase = num(hass, id("sensor.phase"));
+  const phaseState = hass.states[id("sensor.phase")];
+  const phase = phaseState ? phaseNum(phaseState.state, phaseState.attributes) : null;
   const errors = ["heating_error", "flame_sensor_error", "boiler_overheat", "buffer_top_overheat"]
     .filter((k) => id(`binary_sensor.${k}`) && isOn(hass, id(`binary_sensor.${k}`)));
   return {
@@ -112,7 +123,7 @@ function readOven(hass, map) {
     door: isOn(hass, id("binary_sensor.door")),
     relay: isOn(hass, id("binary_sensor.relay")),
     errors,
-    burning: phase !== null && phase >= 1 && phase <= 5,
+    burning: phase !== null && phase >= 1 && phase <= 6,
     params: {
       ts: num(hass, id("number.start_temp")),
       flap2: num(hass, id("number.flap2")), flap3: num(hass, id("number.flap3")),
@@ -127,7 +138,8 @@ function phaseLabel(hass, phase, short = false) {
   if (phase === null) return "–";
   if (phase === 0) return tr(hass, "off");
   if (phase === 1) return tr(hass, "start");
-  if (phase >= 2 && phase <= 5) return short ? `S${phase}` : `${tr(hass, "stage")} ${phase}`;
+  if (phase === 2) return tr(hass, short ? "heat" : "heating");
+  if (phase >= 3 && phase <= 6) return short ? `S${phase - 1}` : `${tr(hass, "stage")} S${phase - 1}`;
   if (phase === 8) return tr(hass, "end");
   return `${tr(hass, "phase")} ${phase}`;
 }
@@ -318,7 +330,7 @@ class OvenWindowCard extends OvenBaseCard {
     } else {
       const steps = PHASE_ORDER.map((p, i) => {
         const cls = i === idx ? (p === 8 ? "now stop" : "now") : i < idx ? "done" : "";
-        return `<div class="step ${cls}"><i></i>${esc(p === 1 ? tr(h, "start") : p === 8 ? tr(h, "end") : `S${p}`)}</div>`;
+        return `<div class="step ${cls}"><i></i>${esc(phaseLabel(h, p, true))}</div>`;
       }).join("");
       this._renderShell(`
         <div class="row" style="justify-content: space-between">
@@ -391,7 +403,7 @@ class OvenCurveCard extends OvenBaseCard {
   }
 
   get _hours() {
-    return Number(this._config?.hours_to_show) || 4;
+    return Number(this._config?.hours_to_show) || 2;
   }
 
   async _loadHistory(d) {
@@ -410,10 +422,10 @@ class OvenCurveCard extends OvenBaseCard {
         no_attributes: true,
         significant_changes_only: false,
       });
-      const series = (id) => (result[id] || [])
-        .map((p) => ({ t: (p.lu ?? p.lc) * 1000, v: parseFloat(p.s) }))
+      const series = (id, parse = parseFloat) => (result[id] || [])
+        .map((p) => ({ t: (p.lu ?? p.lc) * 1000, v: parse(p.s) ?? NaN }))
         .filter((p) => Number.isFinite(p.v) && Number.isFinite(p.t));
-      this._history = { temp: series(d.ids.temp), flap: series(d.ids.flap), phase: series(d.ids.phase) };
+      this._history = { temp: series(d.ids.temp), flap: series(d.ids.flap), phase: series(d.ids.phase, (v) => phaseNum(v)) };
       this._historyKey = key;
       this._historyFetched = now;
     } catch (err) {
@@ -518,13 +530,14 @@ class OvenCurveCard extends OvenBaseCard {
       if (f) out += `<path d="${f}" fill="none" stroke="#5c9fd6" stroke-width="1.5" stroke-dasharray="3 3"/>`;
     }
     // Stage markers where the phase changes.
-    let last = null;
+    let last = null, labelX = -Infinity;
     for (const p of s.phase) {
       if (last !== null && p.v !== last && p.t >= from && p.v >= 2) {
         const flapAt = [...s.flap].reverse().find((q) => q.t <= p.t + 30000)?.v;
         out += `<line x1="${x(p.t)}" x2="${x(p.t)}" y1="${mini ? 2 : T - 6}" y2="${H - B}" stroke="var(--${mini ? "divider" : "secondary-text"}-color)" ${mini ? "" : 'stroke-dasharray="2 3"'}/>`;
-        if (!mini) {
-          const label = p.v === 8 ? tr(this._hass, "end") : `S${p.v}${flapAt !== undefined ? ` ${Math.round(flapAt)}%` : ""}`;
+        if (!mini && x(p.t) - labelX >= 46) {
+          labelX = x(p.t);
+          const label = `${phaseLabel(this._hass, p.v, true)}${p.v >= 3 && p.v <= 6 && flapAt !== undefined ? ` ${Math.round(flapAt)}%` : ""}`;
           out += `<text x="${x(p.t) + 3}" y="${T - 9}" font-size="10" fill="var(--secondary-text-color)">${esc(label)}</text>`;
         }
       }
@@ -595,21 +608,21 @@ class OvenStatusCard extends OvenBaseCard {
     const open = this._open ?? this._config.show_curve !== false;
     const p = d.params;
     const stages = [
-      [1, 100, tr(h, "start"), tr(h, "until_ts")], [2, p.flap2, "S2", tr(h, "from_ts")],
-      [3, p.flap3, "S3", `DS3 ${fmtTemp(p.temp3)}%`], [4, p.flap4, "S4", `DS4 ${fmtTemp(p.temp4)}%`],
-      [5, p.flap5, "S5", `DS5 ${fmtTemp(p.temp5)}%`],
+      [[1, 2], 100, tr(h, "start"), tr(h, "until_ts")], [[3], p.flap2, "S2", tr(h, "from_ts")],
+      [[4], p.flap3, "S3", `DS3 ${fmtTemp(p.temp3)}%`], [[5], p.flap4, "S4", `DS4 ${fmtTemp(p.temp4)}%`],
+      [[6], p.flap5, "S5", `DS5 ${fmtTemp(p.temp5)}%`],
     ];
     const W = 320, H = 96, bw = W / stages.length;
     let bars = "";
     stages.forEach(([ph, flap, name], i) => {
-      const active = d.phase === ph, fh = ((H - 30) * (flap ?? 0)) / 100;
+      const active = ph.includes(d.phase), fh = ((H - 30) * (flap ?? 0)) / 100;
       bars += `<rect x="${i * bw + 4}" y="${H - 18 - fh}" width="${bw - 8}" height="${fh}" rx="5"
           fill="${active ? "#ff6d1f" : "color-mix(in srgb, #5c9fd6 45%, var(--divider-color))"}"/>
         <text x="${i * bw + bw / 2}" y="${H - 22 - fh}" font-size="11" text-anchor="middle" fill="var(--primary-text-color)">${fmtTemp(flap)}%</text>
         <text x="${i * bw + bw / 2}" y="${H - 5}" font-size="10.5" text-anchor="middle" fill="var(--${active ? "primary" : "secondary"}-text-color)" font-weight="${active ? 600 : 400}">${esc(name)}</text>`;
     });
     const params = stages.map(([ph, , name, cond]) =>
-      `<div class="param ${d.phase === ph ? "active" : ""}"><b>${esc(name)}</b>${esc(cond)}</div>`).join("");
+      `<div class="param ${ph.includes(d.phase) ? "active" : ""}"><b>${esc(name)}</b>${esc(cond)}</div>`).join("");
     this._renderShell(`
       <div class="crow clickable" data-entity="${d.ids.temp}">
         ${icon}

@@ -48,7 +48,7 @@ stove is used.
 | `device` | all | first stove | Device id of the stove |
 | `name` | all | "Kaminofen" / "Stove" | Title (badge: label of the temperature badge) |
 | `compact` | cards | `false` | Small variant |
-| `hours_to_show` | curve | `4` | Time range of the curve |
+| `hours_to_show` | curve | `2` | Time range of the curve |
 | `show_curve` | status | `true` | Burn curve expanded at start |
 | `show` | badge | `temperature` | `temperature`, `phase`, `flap`, `door` or `alarm` |
 | `hide_inactive` | badge | `true` | Hide the door and alarm badges while nothing is open or wrong |
@@ -70,8 +70,9 @@ type: custom:oven-badge
 show: alarm
 ```
 
-Phase names: 1 = kindling (waiting for the start temperature TS), 2–5 = stages S2–S5, 8 =
-end. Other values are shown as "Phase n".
+Phases as mapped from a live burn: kindling (flap open, fire catching), heating up (until the
+start temperature TS), stages S2–S5 and end. Unknown values are shown as "Phase n". Both the
+text phase sensor of Oven Control 0.3.0 and the numeric one of older versions work.
 
 ![Cards in the dark theme with an open door and a heating error](docs/dark.png)
 
