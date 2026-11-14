@@ -9,7 +9,7 @@ Dashboard cards and a badge for wood stoves connected with the
 |---|---|---|
 | `custom:oven-window-card` | Stove window: the flame grows with the temperature, the slot below shows the air flap, phase bar underneath | Square tile with a small stove |
 | `custom:oven-curve-card` | Temperature and air flap of the last hours with markers where the stage changes | Value with a sparkline |
-| `custom:oven-status-card` | Status row with the configured burn curve (flap per stage, TS, DS3–DS5); the active stage is highlighted | One row in tile height |
+| `custom:oven-status-card` | Status row with the configured burn curve (flap per stage, TS, DS3–DS5); the active stage is highlighted | One row in tile height: temperature and burn time, stage steps Start–S5, air flap on the right; door, relay and alarm as small icons |
 | `custom:oven-badge` | Badge for temperature, phase, flap, door or alarm | – |
 
 All elements show door, relay and alarm states; errors (heating error, flame sensor error)

@@ -3,6 +3,14 @@
 All notable changes. Versions follow [Semantic Versioning](https://semver.org/); each version
 is published as a GitHub release, which HACS offers as an update.
 
+## [Unreleased]
+
+### Changed
+
+- `oven-status-card` `compact`: the row shows the stage steps (Start, S2–S5) with the current
+  stage highlighted, the air flap as a labelled value on the right, and door, relay and alarm as
+  small icons next to the temperature instead of the unlabelled dots and flap bar.
+
 ## [0.1.0] - 2026-10-18
 
 ### Added

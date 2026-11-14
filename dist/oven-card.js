@@ -596,10 +596,9 @@ class OvenStatusCard extends OvenBaseCard {
       this._renderShell(`
         <div class="crow clickable" data-entity="${d.ids.temp}">
           ${icon}
-          <div><div class="l1">${fmtTemp(d.temp)} °C · ${esc(phaseLabel(h, d.phase))}</div><div class="l2">${sub}</div></div>
-          <div class="side">
-            <div class="dots"><i class="${d.door ? "door" : ""}"></i><i class="${d.relay ? "relay" : ""}"></i><i class="${d.errors.length ? "err" : ""}"></i></div>
-            <div class="flapbar"><i style="width: ${d.flap ?? 0}%"></i></div>
+          <div class="mid">${this._compactMiddle(d)}</div>
+          <div class="flapv clickable" data-entity="${d.ids.flap ?? ""}">
+            <b>${d.flap === null ? "–" : `${fmtTemp(d.flap)} %`}</b><span>${esc(tr(h, "flap"))}</span>
           </div>
         </div>`, MINI_STATUS_CSS);
       this._bindMoreInfo();
@@ -651,6 +650,32 @@ class OvenStatusCard extends OvenBaseCard {
     });
   }
 
+  /**
+   * Middle of the compact row: temperature with burn time (or phase) and small hint icons for
+   * door, relay and alarm, then the stage steps Start, S2–S5 while burning (or an alarm / "cold" line).
+   */
+  _compactMiddle(d) {
+    const h = this._hass;
+    const ended = d.phase === 8;
+    const hints = [
+      d.door && ["door", "#f9a825", `${tr(h, "door")} ${tr(h, "open")}`],
+      d.relay && ["fan", "#ff6d1f", `${tr(h, "relay")} ${tr(h, "on")}`],
+      d.errors.length && ["alert", "var(--error-color)", tr(h, d.errors[0]).split(" –")[0]],
+    ].filter(Boolean).map(([name, color, label]) =>
+      `<span class="hint" style="color: ${color}" title="${esc(label)}" role="img" aria-label="${esc(label)}">${svgIcon(name)}</span>`).join("");
+    const head = d.burning ? fmtDuration(d.duration) : phaseLabel(h, d.phase);
+    const l1 = `<div class="l1"><span>${fmtTemp(d.temp)} °C · ${esc(head)}</span>${hints}</div>`;
+    if (d.errors.length) {
+      return `${l1}<div class="l2" style="color: var(--error-color)">${esc(tr(h, d.errors[0]).split(" –")[0])}</div>`;
+    }
+    if (!d.burning && !ended) return `${l1}<div class="l2">${esc(tr(h, "cold"))}</div>`;
+    // Step index: kindling and heating up = Start (0), S2–S5 = raw phases 3–6, end = all done.
+    const now = ended ? COMPACT_STEPS.length : d.phase <= 2 ? 0 : d.phase - 2;
+    const steps = COMPACT_STEPS.map((name, i) =>
+      `<span class="${i < now ? "done" : i === now ? "now" : ""}"><i></i>${name}</span>`).join("");
+    return `${l1}<div class="steps">${steps}</div>`;
+  }
+
   getCardSize() {
     return this._config?.compact ? 1 : 4;
   }
@@ -692,13 +717,28 @@ const MINI_STATUS_CSS = `
   .crow { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; width: 100%; }
   .icon { width: 40px; height: 40px; } .icon svg { width: 22px; height: 22px; }
   .l1 { font-weight: 500; } .l2 { font-size: 12px; color: var(--secondary-text-color); }
-  .side { display: grid; justify-items: end; gap: 4px; }
-  .dots { display: flex; gap: 4px; }
-  .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--divider-color); }
-  .dots i.door { background: #f9a825; } .dots i.relay { background: #ff6d1f; } .dots i.err { background: var(--error-color); }
-  .flapbar { width: 46px; height: 6px; border-radius: 3px; background: var(--divider-color); overflow: hidden; }
-  .flapbar i { display: block; height: 100%; background: #5c9fd6; }
+  .mid { min-width: 0; }
+  .l1 { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .l1 > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+  .hint { flex: none; display: inline-flex; }
+  .hint svg { width: 15px; height: 15px; }
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 5px;
+    font-size: 10px; line-height: 1.2; text-align: center; color: var(--secondary-text-color); }
+  .steps i { display: block; position: relative; overflow: hidden; height: 5px; margin-bottom: 2px; border-radius: 3px;
+    background: color-mix(in srgb, var(--secondary-text-color) 22%, transparent); }
+  .steps .done i { background: color-mix(in srgb, #ff6d1f 50%, transparent); }
+  .steps .now { color: var(--primary-text-color); font-weight: 600; }
+  .steps .now i { background: #ff6d1f; }
+  .steps .now i::after { content: ""; position: absolute; inset: 0; width: 60%; transform: translateX(-120%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+    animation: oven-sweep 2.6s cubic-bezier(.45, 0, .25, 1) infinite; }
+  @keyframes oven-sweep { 0% { transform: translateX(-120%); } 70%, 100% { transform: translateX(280%); } }
+  @media (prefers-reduced-motion: reduce) { .steps .now i::after { animation: none; opacity: 0; } }
+  .flapv { display: grid; justify-items: end; line-height: 1.15; }
+  .flapv b { font-size: 15px; font-weight: 500; color: #5c9fd6; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .flapv span { font-size: 11px; color: var(--secondary-text-color); }
 `;
+const COMPACT_STEPS = ["Start", "S2", "S3", "S4", "S5"];
 
 // ---------------------------------------------------------------------------
 // D: badge
