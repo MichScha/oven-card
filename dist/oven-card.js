@@ -13,7 +13,7 @@
  * Plain web components, no dependencies, no build step.
  */
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const DOMAIN = "oven_control";
 const PHASE_ORDER = [1, 2, 3, 4, 5, 6, 8];
 // States of the burn phase sensor -> raw controller phase (stages S2–S5 are phases 3–6).
