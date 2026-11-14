@@ -3,7 +3,7 @@
 All notable changes. Versions follow [Semantic Versioning](https://semver.org/); each version
 is published as a GitHub release, which HACS offers as an update.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-14
 
 ### Changed
 
